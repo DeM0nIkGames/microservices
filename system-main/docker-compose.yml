@@ -1,0 +1,288 @@
+name: ml-platform
+
+
+x-service-keys: &service-keys
+  WEB_SERVICE_KEY: "${WEB_SERVICE_KEY:?Set WEB_SERVICE_KEY in .env}"
+  STORAGE_SERVICE_KEY: "${STORAGE_SERVICE_KEY:?Set STORAGE_SERVICE_KEY in .env}"
+  COLLECTOR_SERVICE_KEY: "${COLLECTOR_SERVICE_KEY:?Set COLLECTOR_SERVICE_KEY in .env}"
+  ML_SERVICE_KEY: "${ML_SERVICE_KEY:?Set ML_SERVICE_KEY in .env}"
+  VIS_SERVICE_KEY: "${VIS_SERVICE_KEY:?Set VIS_SERVICE_KEY in .env}"
+
+
+x-service-urls: &service-urls
+  STORAGE_MODULE_URL: "http://storage-service:8000"
+  COLLECTOR_MODULE_URL: "http://collector-service:8000"
+  LOADER_MODULE_URL: "http://collector-service:8000"
+  ML_MODULE_URL: "http://ml-service:8000"
+  VIS_MODULE_URL: "http://visualization-service:8000"
+
+
+# x-minio-client: &minio-client
+#   MINIO_ENDPOINT: "minio:9000"
+#   MINIO_ACCESS_KEY: "${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}"
+#   MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}"
+#   MINIO_BUCKET: "${MINIO_BUCKET:-ml-platform}"
+
+x-minio-client: &minio-client
+  MINIO_ENDPOINT: "minio:9000"
+  MINIO_PUBLIC_ENDPOINT: "${MINIO_PUBLIC_ENDPOINT:-localhost:9000}"
+  MINIO_REGION: "${MINIO_REGION:-us-east-1}"
+  MINIO_ACCESS_KEY: "${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}"
+  MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}"
+  MINIO_BUCKET: "${MINIO_BUCKET:-ml-platform}"
+
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-ml_platform}"
+      POSTGRES_USER: "${POSTGRES_USER:-ml_platform}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    networks:
+      - ml-platform-network
+
+
+  minio:
+    build:
+      context: ./minio
+      args:
+        MINIO_REF: RELEASE.2025-10-15T17-29-55Z
+    image: ml-platform-minio:RELEASE.2025-10-15T17-29-55Z
+    container_name: ml-platform-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}"
+    command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - ml-platform-network
+
+
+  storage-service:
+    build:
+      context: ./storage-service
+    restart: unless-stopped
+    command:
+      - flask
+      - --app
+      - app:create_app
+      - run
+      - --host=0.0.0.0
+      - --port=8000
+    environment:
+      LOG_DIR: "/service/logs"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      <<:
+        - *service-keys
+        - *service-urls
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: >-
+        postgresql://${POSTGRES_USER:-ml_platform}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ml_platform}
+      DB_POOL_MIN_SIZE: "${DB_POOL_MIN_SIZE:-1}"
+      DB_POOL_MAX_SIZE: "${DB_POOL_MAX_SIZE:-10}"
+    ports:
+      - "127.0.0.1:${STORAGE_PORT:-8001}:8000"
+    volumes:
+      - ./logs/storage:/service/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ml-platform-network
+
+
+  collector-service:
+    build:
+      context: ./collector-service
+    restart: unless-stopped
+    command:
+      - flask
+      - --app
+      - app:create_app
+      - run
+      - --host=0.0.0.0
+      - --port=8000
+    environment:
+      LOG_DIR: "/service/logs"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      <<:
+        - *service-keys
+        - *service-urls
+        - *minio-client
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "127.0.0.1:${COLLECTOR_PORT:-8002}:8000"
+    volumes:
+      - ./logs/collector:/service/logs
+    depends_on:
+      storage-service:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    networks:
+      - ml-platform-network
+
+
+  ml-service:
+    build:
+      context: ./ml-service
+    restart: unless-stopped
+    command:
+      - flask
+      - --app
+      - app:create_app
+      - run
+      - --host=0.0.0.0
+      - --port=8000
+    environment:
+      <<:
+        - *service-keys
+        - *service-urls
+        - *minio-client
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "127.0.0.1:${ML_PORT:-8003}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      storage-service:
+        condition: service_started
+      collector-service:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    networks:
+      - ml-platform-network
+
+
+  ml-worker:
+    build:
+      context: ./ml-service
+    restart: unless-stopped
+    command:
+      - python
+      - -m
+      - app.models.worker
+    environment:
+      <<:
+        - *service-keys
+        - *service-urls
+        - *minio-client
+      PYTHONUNBUFFERED: "1"
+      WORKER_ID: "ml-worker-1"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    depends_on:
+      storage-service:
+        condition: service_started
+      collector-service:
+        condition: service_started
+      minio:
+        condition: service_healthy
+
+    networks:
+      - ml-platform-network
+      - ml-model-network
+
+
+  visualization-service:
+    build:
+      context: ./visualization-service
+    restart: unless-stopped
+    command:
+      - flask
+      - --app
+      - app:create_app
+      - run
+      - --host=0.0.0.0
+      - --port=8000
+    environment:
+      <<:
+        - *service-keys
+        - *service-urls
+        - *minio-client
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "127.0.0.1:${VIS_PORT:-8004}:8000"
+    depends_on:
+      storage-service:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    networks:
+      - ml-platform-network
+
+
+  web-service:
+    build:
+      context: ./web-service
+    restart: unless-stopped
+    command:
+      - flask
+      - --app
+      - app:create_app
+      - run
+      - --host=0.0.0.0
+      - --port=8000
+    environment:
+      <<: *service-urls
+      PYTHONUNBUFFERED: "1"
+      FLASK_SECRET_KEY: "${FLASK_SECRET_KEY:?Set FLASK_SECRET_KEY in .env}"
+      WEB_SERVICE_KEY: "${WEB_SERVICE_KEY:?Set WEB_SERVICE_KEY in .env}"
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8000}:8000"
+    depends_on:
+      storage-service:
+        condition: service_started
+      collector-service:
+        condition: service_started
+      ml-service:
+        condition: service_started
+      visualization-service:
+        condition: service_started
+    networks:
+      - ml-platform-network
+
+
+volumes:
+  postgres_data:
+  minio_data:
+
+
+networks:
+  ml-platform-network:
+    name: ml-platform-network
+    driver: bridge
+  ml-model-network:
+    name: ml-model-network
+    external: true

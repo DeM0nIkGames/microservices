@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Вход · ML Platform</title>
+
+  <link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/styles.css') }}"
+  >
+</head>
+
+<body>
+  <main class="auth-page">
+    <section class="auth-card" aria-labelledby="login-title">
+      <div class="brand-mark" aria-hidden="true">ML</div>
+
+      <h1 id="login-title">Вход в систему</h1>
+      <p class="muted">Введите данные своей учётной записи.</p>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="flash flash-{{ category }}" role="alert">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endwith %}
+
+      <form method="post" class="form-stack">
+        <input
+          type="hidden"
+          name="csrf_token"
+          value="{{ csrf_token() }}"
+        >
+
+        <label>
+          Логин
+          <input
+            type="text"
+            name="login"
+            autocomplete="username"
+            required
+            autofocus
+          >
+        </label>
+
+        <label>
+          Пароль
+          <input
+            type="password"
+            name="password"
+            autocomplete="current-password"
+            required
+          >
+        </label>
+
+        <button class="button button-primary" type="submit">
+          Войти
+        </button>
+      </form>
+    </section>
+  </main>
+
+  <script
+    src="{{ url_for('static', filename='js/app.js') }}"
+    defer
+  ></script>
+</body>
+</html>

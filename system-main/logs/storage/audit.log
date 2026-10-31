@@ -1,0 +1,1 @@
+{"timestamp": "2026-10-15T20:32:09.031902+00:00", "level": "INFO", "event": "audit", "request_id": "dd381c96167c4ab69b505186b48ca6d3", "caller_service": "web-service", "actor_id": null, "action": "auth.login", "entity_type": "user", "entity_id": 1, "outcome": "success", "details": {"login": "admin", "role": "admin"}}

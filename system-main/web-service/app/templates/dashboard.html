@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Главная · ML Platform</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+<main class="app-shell">
+  <header class="topbar">
+    <a class="logo" href="{{ url_for('main.dashboard') }}" aria-label="ML Platform, главная">
+      <span class="logo-mark">ML</span>
+      <span>ML Platform</span>
+    </a>
+
+    <div class="profile-panel">
+      {% if user.role == 'admin' %}
+        <a
+          class="button button-small button-secondary"
+          href="{{ url_for('auth.users_index') }}"
+        >
+          Пользователи
+        </a>
+      {% endif %}
+
+      <div class="profile-identity">
+        <strong>{{ user.login }}</strong>
+        <span>
+          {{ 'Администратор' if user.role == 'admin' else 'Пользователь' }}
+        </span>
+      </div>
+
+      <button
+        class="button button-small button-secondary"
+        type="button"
+        data-open-dialog="password-dialog"
+      >
+        Смена пароля
+      </button>
+
+      <form method="post" action="{{ url_for('auth.logout') }}">
+        <input
+          type="hidden"
+          name="csrf_token"
+          value="{{ csrf_token() }}"
+        >
+        <button class="button button-small button-danger" type="submit">
+          Выйти
+        </button>
+      </form>
+    </div>
+  </header>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="flash flash-{{ category }}" role="alert">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <nav class="tabs" aria-label="Разделы платформы" role="tablist">
+    <button class="tab is-active" type="button" role="tab" aria-selected="true" aria-controls="models-panel" id="models-tab" data-tab-target="models-panel">
+      Модели
+    </button>
+    <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="datasets-panel" id="datasets-tab" data-tab-target="datasets-panel">
+      Датасеты
+    </button>
+    <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="results-panel" id="results-tab" data-tab-target="results-panel">
+      Результаты
+    </button>
+  </nav>
+
+  <section class="tab-panel is-active" id="models-panel" role="tabpanel" aria-labelledby="models-tab">
+    <div class="section-heading">
+      <div>
+        <h1>Модели</h1>
+        <p>Зарегистрированные модули моделей и их версии.</p>
+      </div>
+      {% if user.role == 'admin' %}
+        <button class="button button-primary" type="button" data-open-dialog="model-dialog">
+          Добавить модель
+        </button>
+      {% endif %}
+    </div>
+
+    <div class="card-grid">
+      {% for model in models %}
+        <article class="entity-card">
+          <a class="entity-card-link" href="{{ url_for('models.detail', model_id=model.id) }}">
+            <span class="entity-id">#{{ model.id }}</span>
+            <h2 class="model-card-title">
+              {{ model.name }}
+              <span>v{{ model.version }}</span>
+            </h2>
+            <dl class="entity-meta">
+              <div><dt>Задача</dt><dd>{{ model.task_type }}</dd></div>
+              <div><dt>Статус</dt><dd><span class="status status-{{ model.status }}">{{ model.status }}</span></dd></div>
+            </dl>
+          </a>
+          {% if user.role == 'admin' %}
+            <form method="post" action="{{ url_for('models.delete_model', model_id=model.id) }}" class="entity-delete-form" data-confirm-delete data-confirm-message="Удалить модель «{{ model.name }}» и все её запуски? Это действие нельзя отменить.">
+              {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+              <button class="icon-button delete-button" type="submit" aria-label="Удалить модель {{ model.name }}" title="Удалить модель">×</button>
+            </form>
+          {% endif %}
+        </article>
+      {% else %}
+        <p class="empty-state">Моделей пока нет.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="tab-panel" id="datasets-panel" role="tabpanel" aria-labelledby="datasets-tab" hidden>
+    <div class="section-heading">
+      <div>
+        <h1>Датасеты</h1>
+        <p>Загруженные наборы данных и их назначение.</p>
+      </div>
+      {% if user.role == 'admin' %}
+        <button class="button button-primary" type="button" data-open-dialog="dataset-dialog">
+          Добавить датасет
+        </button>
+      {% endif %}
+    </div>
+
+    <div class="card-grid">
+      {% for dataset in datasets %}
+        <article class="entity-card">
+          <a class="entity-card-link" href="{{ url_for('datasets.detail', dataset_id=dataset.id) }}">
+            <span class="entity-id">#{{ dataset.id }}</span>
+            <h2>{{ dataset.name }}</h2>
+            <dl class="entity-meta">
+              <div><dt>Разбиение</dt><dd>По классам</dd></div>
+              <div><dt>Объектов</dt><dd>{{ dataset.items_count }}</dd></div>
+            </dl>
+          </a>
+          {% if user.role == 'admin' %}
+            <form method="post" action="{{ url_for('datasets.delete_dataset', dataset_id=dataset.id) }}" class="entity-delete-form" data-confirm-delete data-confirm-message="Удалить датасет «{{ dataset.name }}» и все связанные с ним запуски? Это действие нельзя отменить.">
+              {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+              <button class="icon-button delete-button" type="submit" aria-label="Удалить датасет {{ dataset.name }}" title="Удалить датасет">×</button>
+            </form>
+          {% endif %}
+        </article>
+      {% else %}
+        <p class="empty-state">Датасетов пока нет.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="tab-panel" id="results-panel" role="tabpanel" aria-labelledby="results-tab" hidden>
+    <div class="section-heading">
+      <div>
+        <h1>Результаты</h1>
+        <p>Запуски обучения, тестирования и применения моделей.</p>
+      </div>
+    </div>
+
+    {% with runs=results %}
+      {% include "instances/run_cards.html" %}
+    {% endwith %}
+  </section>
+</main>
+
+<dialog class="dialog" id="password-dialog" aria-labelledby="password-title">
+  <div class="dialog-head">
+    <h2 id="password-title">Смена пароля</h2>
+    <button class="icon-button" type="button" data-close-dialog aria-label="Закрыть">×</button>
+  </div>
+  <form method="post" action="{{ url_for('auth.change_password') }}" class="form-stack" data-password-form>
+    {% if csrf_token is defined %}
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% endif %}
+    <label>
+      Текущий пароль
+      <input type="password" name="current_password" autocomplete="current-password" required>
+    </label>
+    <label>
+      Новый пароль
+      <input type="password" name="new_password" autocomplete="new-password" required>
+    </label>
+    <label>
+      Повторите новый пароль
+      <input type="password" name="new_password_repeat" autocomplete="new-password" required>
+    </label>
+    <div class="dialog-actions">
+      <button class="button button-secondary" type="button" data-close-dialog>Отмена</button>
+      <button class="button button-primary" type="submit">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="dialog" id="dataset-dialog" aria-labelledby="dataset-title">
+  <div class="dialog-head">
+    <h2 id="dataset-title">Добавить датасет</h2>
+    <button class="icon-button" type="button" data-close-dialog aria-label="Закрыть">×</button>
+  </div>
+
+  <form method="post" action="{{ url_for('datasets.create_dataset') }}" enctype="multipart/form-data" class="form-stack" data-dataset-form>
+    {% if csrf_token is defined %}
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% endif %}
+    <label>
+      Имя датасета
+      <input type="text" name="name" maxlength="255" autocomplete="off" required>
+    </label>
+    <label>
+      ZIP-архив
+      <input type="file" name="archive" accept=".zip,application/zip" required>
+    </label>
+    <p class="form-hint">
+      Архив должен содержать изображения и один файл разметки: <code>labels.csv</code> или <code>labels.json</code>.
+      Пути в разметке — относительные, от корня архива.
+    </p>
+    <label>
+      Доля объектов для обучения
+      <input
+        type="number"
+        name="train_percent"
+        min="0"
+        max="1"
+        step="0.0001"
+        placeholder="Например, 0.8"
+      >
+    </label>
+
+    <p class="form-hint">
+      Оставьте поле пустым или укажите <code>0</code> для тестового
+      датасета. Значение <code>0.8</code> означает 80% изображений
+      каждого класса для обучения.
+    </p>
+    <p class="form-error" data-form-error hidden></p>
+    <div class="dialog-actions">
+      <button class="button button-secondary" type="button" data-close-dialog>Отмена</button>
+      <button class="button button-primary" type="submit">Загрузить</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="dialog" id="model-dialog" aria-labelledby="model-title">
+  <div class="dialog-head">
+    <h2 id="model-title">Добавить модель</h2>
+    <button class="icon-button" type="button" data-close-dialog aria-label="Закрыть">×</button>
+  </div>
+
+  <form method="post" action="{{ url_for('models.create_model') }}" class="form-stack" data-model-form>
+    {% if csrf_token is defined %}
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% endif %}
+    <label>
+      Имя модели
+      <input type="text" name="name" maxlength="255" autocomplete="off" required>
+    </label>
+    <label>
+      Версия
+      <input type="text" name="version" maxlength="64" value="1.0.0" required>
+    </label>
+    <label>
+      URL модели
+      <input type="url" name="import_url" placeholder="http://model-service:9000" required>
+    </label>
+    <p class="form-hint">
+      Адрес должен быть доступен из контейнера <code>ml-service</code>, а не только из браузера.
+    </p>
+    <p class="form-error" data-form-error hidden></p>
+    <div class="dialog-actions">
+      <button class="button button-secondary" type="button" data-close-dialog>Отмена</button>
+      <button class="button button-primary" type="submit">Зарегистрировать</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/runs.js') }}" defer></script>
+</body>
+</html>

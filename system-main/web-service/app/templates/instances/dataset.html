@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ dataset.name }} · Датасет · ML Platform</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+<main class="app-shell instance-page">
+  <header class="topbar">
+    <a class="logo" href="{{ url_for('main.dashboard') }}" aria-label="ML Platform, главная">
+      <span class="logo-mark">ML</span>
+      <span>ML Platform</span>
+    </a>
+
+    <div class="page-actions">
+      <a class="button button-small button-secondary back-button" href="{{ url_for('main.dashboard') }}" aria-label="Вернуться на главную">← Назад</a>
+      <div class="profile-panel">
+        <div class="profile-identity">
+          <strong>{{ user.login }}</strong>
+          <span>{{ 'Администратор' if user.role == 'admin' else 'Пользователь' }}</span>
+        </div>
+        <button class="button button-small button-secondary" type="button" data-open-dialog="password-dialog">Смена пароля</button>
+        <form method="post" action="{{ url_for('auth.logout') }}">
+          {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+          <button class="button button-small button-danger" type="submit">Выйти</button>
+        </form>
+      </div>
+    </div>
+  </header>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="flash flash-{{ category }}" role="alert">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <section class="instance-heading">
+    <div>
+      <span class="entity-id">Датасет #{{ dataset.id }}</span>
+      <h1>{{ dataset.name }}</h1>
+      <p>{{ dataset.total_items }} изображений · {{ dataset.classes|length }} классов</p>
+    </div>
+  </section>
+
+  <section class="instance-section">
+    <div class="section-heading">
+      <div>
+        <h2>Статистика разбиения</h2>
+        <p>Количество объектов пересчитывается сразу при изменении доли обучения.</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="results-table dataset-stats-table">
+        <thead>
+          <tr><th>Название класса</th><th>Всего изображений</th><th>В тренировочной выборке</th><th>В тестовой выборке</th></tr>
+        </thead>
+        <tbody>
+          {% for item in dataset.classes %}
+            {% set train_count = (item.items_count * item.train_percent)|int %}
+            <tr data-class-id="{{ item.id }}" data-items-count="{{ item.items_count }}">
+              <td data-class-name>{{ item.label }}</td>
+              <td>{{ item.items_count }}</td>
+              <td data-train-count>{{ train_count }}</td>
+              <td data-test-count>{{ item.items_count - train_count }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="instance-section">
+    <div class="section-heading">
+      <div>
+        <h2>Разбиение по классам</h2>
+        <p>Укажите долю изображений каждого класса, попадающих в обучающую выборку.</p>
+      </div>
+    </div>
+    {% if user.role == 'admin' %}
+      <form method="post" action="{{ url_for('datasets.update_settings', dataset_id=dataset.id) }}" data-dataset-settings-form>
+        {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+        <input type="hidden" name="train_percent" value="" data-train-percent-json>
+        <div class="split-controls">
+          {% for item in dataset.classes %}
+            <label class="split-control" for="train-percent-{{ item.id }}">
+              <span class="split-control-name">{{ item.label }}</span>
+              <span class="split-control-value" data-slider-value="{{ item.id }}">{{ (item.train_percent * 100)|round(2) }}%</span>
+              <input id="train-percent-{{ item.id }}" type="range" min="0" max="1" step="0.01" value="{{ item.train_percent }}" data-train-slider data-class-id="{{ item.id }}">
+            </label>
+          {% endfor %}
+        </div>
+        <div class="instance-form-actions"><button class="button button-primary" type="submit">Сохранить разбиение</button></div>
+      </form>
+    {% else %}
+      <div class="split-controls">
+        {% for item in dataset.classes %}
+          <div class="split-control split-control-readonly">
+            <span class="split-control-name">{{ item.label }}</span>
+            <span class="split-control-value">{{ (item.train_percent * 100)|round(2) }}%</span>
+            <progress value="{{ item.train_percent }}" max="1"></progress>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="instance-section">
+    <div class="section-heading">
+      <div><h2>Примеры изображений</h2><p>Случайное изображение из каждого класса.</p></div>
+    </div>
+    <div class="class-preview-grid">
+      {% for item in dataset.classes %}
+        <article class="class-preview-card">
+          <div class="class-preview-head">
+            <h3 data-class-card-name="{{ item.id }}">{{ item.label }}</h3>
+            {% if user.role == 'admin' %}
+              <button class="icon-button class-edit-button" type="button" aria-label="Переименовать класс {{ item.label }}" title="Переименовать класс" data-edit-class data-class-label="{{ item.label }}" data-edit-url="{{ url_for('datasets.update_class_label', dataset_id=dataset.id, class_id=item.id) }}">✎</button>
+            {% endif %}
+          </div>
+          <img src="{{ item.preview_url }}" alt="Случайное изображение класса {{ item.label }}" loading="lazy">
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+</main>
+
+<dialog class="dialog" id="password-dialog" aria-labelledby="password-title">
+  <div class="dialog-head"><h2 id="password-title">Смена пароля</h2><button class="icon-button" type="button" data-close-dialog aria-label="Закрыть">×</button></div>
+  <form method="post" action="{{ url_for('auth.change_password') }}" class="form-stack" data-password-form>
+    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+    <label>Текущий пароль<input type="password" name="current_password" autocomplete="current-password" required></label>
+    <label>Новый пароль<input type="password" name="new_password" autocomplete="new-password" required></label>
+    <label>Повторите новый пароль<input type="password" name="new_password_repeat" autocomplete="new-password" required></label>
+    <div class="dialog-actions"><button class="button button-secondary" type="button" data-close-dialog>Отмена</button><button class="button button-primary" type="submit">Сохранить</button></div>
+  </form>
+</dialog>
+
+<dialog class="dialog" id="class-label-dialog" aria-labelledby="class-label-title">
+  <div class="dialog-head"><h2 id="class-label-title">Переименовать класс</h2><button class="icon-button" type="button" data-close-dialog aria-label="Закрыть">×</button></div>
+  <form method="post" action="" class="form-stack" data-class-label-form>
+    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+    <label>Название класса<input type="text" name="label" maxlength="255" required data-class-label-input></label>
+    <div class="dialog-actions"><button class="button button-secondary" type="button" data-close-dialog>Отмена</button><button class="button button-primary" type="submit">Сохранить</button></div>
+  </form>
+</dialog>
+
+<script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/dataset.js') }}" defer></script>
+</body>
+</html>

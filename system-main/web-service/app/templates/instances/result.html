@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Запуск #{{ run.id }} · ML Platform</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+<main class="app-shell instance-page result-page">
+  <header class="topbar">
+    <a class="logo" href="{{ url_for('main.dashboard') }}" aria-label="ML Platform, главная">
+      <span class="logo-mark">ML</span>
+      <span>ML Platform</span>
+    </a>
+
+    <div class="page-actions">
+      <a class="button button-small button-secondary back-button" href="{{ url_for('models.detail', model_id=run.model_id) }}" aria-label="Вернуться к модели">← Назад</a>
+      <div class="profile-panel">
+        <div class="profile-identity">
+          <strong>{{ user.login }}</strong>
+          <span>{{ 'Администратор' if user.role == 'admin' else 'Пользователь' }}</span>
+        </div>
+        <button class="button button-small button-secondary" type="button" data-open-dialog="password-dialog">Смена пароля</button>
+        <form method="post" action="{{ url_for('auth.logout') }}">
+          {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+          <button class="button button-small button-danger" type="submit">Выйти</button>
+        </form>
+      </div>
+    </div>
+  </header>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="flash flash-{{ category }}" role="alert">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <section class="instance-heading result-heading">
+    <span class="entity-id">Запуск #{{ run.id }}</span>
+    <h1>{{ run.model_name }} <span>· версия {{ run.model_version }}</span></h1>
+    <p>Датасет: {{ run.dataset_name }} · {{ run.task_type }}</p>
+  </section>
+
+  <div class="tabs result-tabs" role="tablist" aria-label="Данные запуска">
+    <button class="tab is-active" type="button" role="tab" aria-selected="true" aria-controls="statistics-panel" id="statistics-tab" data-tab-target="statistics-panel">Статистика</button>
+    <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="charts-panel" id="charts-tab" data-tab-target="charts-panel">Графики</button>
+  </div>
+
+  <section class="tab-panel is-active" id="statistics-panel" role="tabpanel" aria-labelledby="statistics-tab">
+    <div class="instance-section result-section-first">
+      <div class="section-heading">
+        <div>
+          <h2>Метрики</h2>
+          <p>Метрики рассчитываются отдельно для каждого доступного сплита.</p>
+        </div>
+      </div>
+
+      {% if metric_rows %}
+        <div class="table-wrap">
+          <table class="results-table run-statistics-table">
+            <thead>
+              <tr>
+                <th>Сплит</th>
+                <th>Accuracy</th>
+                <th>Precision</th>
+                <th>Recall</th>
+                <th>F1</th>
+                <th>ROC AUC</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in metric_rows %}
+                <tr>
+                  <td>{{ row.label }}</td>
+                  <td>{% if row.accuracy is not none %}{{ (row.accuracy * 100)|round(2) }}%{% else %}—{% endif %}</td>
+                  <td>{% if row.precision is not none %}{{ row.precision|round(4) }}{% else %}—{% endif %}</td>
+                  <td>{% if row.recall is not none %}{{ row.recall|round(4) }}{% else %}—{% endif %}</td>
+                  <td>{% if row.f1 is not none %}{{ row.f1|round(4) }}{% else %}—{% endif %}</td>
+                  <td>{% if row.roc_auc is not none %}{{ row.roc_auc|round(4) }}{% else %}—{% endif %}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="empty-state">Метрики появятся после завершения оценки модели.</p>
+      {% endif %}
+    </div>
+
+    <div class="instance-section">
+      <div class="section-heading">
+        <div>
+          <h2>Примеры ошибок</h2>
+          <p>Случайные изображения сгруппированы по паре истинной и предсказанной меток.</p>
+        </div>
+      </div>
+
+      {% if error_groups %}
+        <div class="error-groups">
+          {% for group in error_groups %}
+            <section class="error-group">
+              <h3><span>True label: {{ group.true_label }}</span><span>Pred label: {{ group.predicted_label }}</span></h3>
+              <div class="error-preview-grid">
+                {% for image in group.images %}
+                  <article class="error-preview-card">
+                    <img src="{{ image.url }}" alt="Ошибка: {{ group.true_label }} распознано как {{ group.predicted_label }}" loading="lazy">
+                    {% if image.get("score") is not none %}<span>Уверенность: {{ (image.score * 100)|round(1) }}%</span>{% endif %}
+                  </article>
+                {% endfor %}
+              </div>
+            </section>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-state">Примеры ошибок появятся после завершения запуска. Если ошибок нет, этот блок останется пустым.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section
+    class="tab-panel"
+    id="charts-panel"
+    role="tabpanel"
+    aria-labelledby="charts-tab"
+    hidden
+    data-run-charts
+    data-charts-url="{{ url_for('results.charts', run_id=run.id) }}"
+  >
+    <div class="instance-section result-section-first">
+      <div class="section-heading">
+        <div>
+          <h2>Графики обучения и оценки</h2>
+          <p>Масштабируйте область колёсиком мыши или инструментами графика; при наведении будут видны значения осей.</p>
+        </div>
+      </div>
+      <div
+        class="threshold-controls"
+        data-threshold-controls
+      >
+        <div class="threshold-heading">
+          <div>
+            <h3>Порог обнаружения аномалий</h3>
+            <p>
+              Выберите перцентиль вручную или используйте автоматический
+              подбор по критерию Youden.
+            </p>
+          </div>
+
+          <button
+            class="button button-secondary"
+            type="button"
+            data-auto-threshold
+          >
+            Подобрать автоматически
+          </button>
+        </div>
+
+        <label class="threshold-slider-label">
+          <span>
+            Перцентиль:
+            <strong data-percentile-value>95</strong>
+          </span>
+
+          <input
+            type="range"
+            min="1"
+            max="100"
+            step="1"
+            value="95"
+            data-threshold-slider
+          >
+        </label>
+
+        <p class="threshold-current">
+          Текущий порог:
+          <strong data-threshold-value>—</strong>
+          <span data-threshold-mode>ручной режим</span>
+        </p>
+      </div>
+      <p class="chart-loading" data-chart-loading>Загрузка графиков…</p>
+      <p class="form-error" data-chart-error hidden></p>
+      <div class="charts-grid" data-charts-grid hidden></div>
+    </div>
+  </section>
+</main>
+
+<dialog class="dialog" id="password-dialog" aria-labelledby="password-title">
+  <div class="dialog-head"><h2 id="password-title">Смена пароля</h2><button class="icon-button" type="button" data-close-dialog aria-label="Закрыть">×</button></div>
+  <form method="post" action="{{ url_for('auth.change_password') }}" class="form-stack" data-password-form>
+    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+    <label>Текущий пароль<input type="password" name="current_password" autocomplete="current-password" required></label>
+    <label>Новый пароль<input type="password" name="new_password" autocomplete="new-password" required></label>
+    <label>Повторите новый пароль<input type="password" name="new_password_repeat" autocomplete="new-password" required></label>
+    <div class="dialog-actions"><button class="button button-secondary" type="button" data-close-dialog>Отмена</button><button class="button button-primary" type="submit">Сохранить</button></div>
+  </form>
+</dialog>
+
+<script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
+<script src="{{ url_for('static', filename='js/result.js') }}" defer></script>
+</body>
+</html>

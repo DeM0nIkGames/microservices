@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ model.name }} · Модель · ML Platform</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+<main class="app-shell instance-page">
+  <header class="topbar">
+    <a class="logo" href="{{ url_for('main.dashboard') }}" aria-label="ML Platform, главная">
+      <span class="logo-mark">ML</span>
+      <span>ML Platform</span>
+    </a>
+
+    <div class="page-actions">
+      <a class="button button-small button-secondary back-button" href="{{ url_for('main.dashboard') }}">← Назад</a>
+      <div class="profile-panel">
+        <div class="profile-identity">
+          <strong>{{ user.login }}</strong>
+          <span>{{ 'Администратор' if user.role == 'admin' else 'Пользователь' }}</span>
+        </div>
+        <button class="button button-small button-secondary" type="button" data-open-dialog="password-dialog">Смена пароля</button>
+        <form method="post" action="{{ url_for('auth.logout') }}">
+          {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+          <button class="button button-small button-danger" type="submit">Выйти</button>
+        </form>
+      </div>
+    </div>
+  </header>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="flash flash-{{ category }}" role="alert">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <section class="instance-heading">
+    <span class="entity-id">Модель #{{ model.id }} · версия {{ model.version }}</span>
+    <h1>{{ model.name }}</h1>
+    <p>{{ model.task_type }} · {{ model.status }}</p>
+  </section>
+
+  <!-- {% if user.role == 'admin' %}
+    <div class="instance-form-actions run-launch-action">
+      <button
+        class="button button-primary"
+        type="button"
+        data-open-dialog="run-dialog"
+        {% if not datasets %}disabled title="Сначала добавьте хотя бы один датасет"{% endif %}
+      >
+        Запустить модель
+      </button>
+    </div>
+  {% endif %}
+  {% if user.role == 'admin' %}
+    <div class="instance-form-actions">
+      <button
+        class="button button-secondary"
+        type="button"
+        data-open-dialog="new-version-dialog"
+      >
+        Зарегистрировать новую версию
+      </button>
+    </div>
+  {% endif %} -->
+
+  <section class="instance-section">
+    <div class="section-heading">
+      <div>
+        <h2>Гиперпараметры</h2>
+        <p>Значения будут использованы при создании следующего запуска модели.</p>
+      </div>
+      {% if user.role == 'admin' and hyperparameters %}
+        <button class="button button-small button-secondary" type="button" data-reset-hyperparameters>Сбросить</button>
+      {% endif %}
+    </div>
+
+    {% if hyperparameters %}
+      <form class="hyperparameters-grid" data-hyperparameters-form>
+        {% for parameter in hyperparameters %}
+          {% set current_value = parameter.get(
+            'value',
+            parameter.get('default')
+          ) %}
+
+          <label class="hyperparameter-field">
+            <span class="hyperparameter-label">
+              <span>{{ parameter.label or parameter.name }}</span>
+
+              {% if parameter.help %}
+                <span
+                  class="field-help"
+                  tabindex="0"
+                  data-tooltip="{{ parameter.help }}"
+                  aria-label="Подсказка"
+                >?</span>
+              {% endif %}
+            </span>
+
+            {% if parameter.get('choices') %}
+              <select
+                name="{{ parameter.name }}"
+                data-parameter-type="enum"
+                data-default-value="{{ parameter.get('default', '') }}"
+                {% if user.role != 'admin' %}disabled{% endif %}
+                required
+              >
+                {% for choice in parameter.choices %}
+                  <option
+                    value="{{ choice }}"
+                    {% if choice == current_value %}selected{% endif %}
+                  >
+                    {{ choice }}
+                  </option>
+                {% endfor %}
+              </select>
+
+            {% elif parameter.get('type') == 'boolean' %}
+              <span class="checkbox-field">
+                <input
+                  type="checkbox"
+                  name="{{ parameter.name }}"
+                  data-parameter-type="boolean"
+                  data-default-checked="{{
+                    'true' if parameter.get('default') else 'false'
+                  }}"
+                  {% if current_value %}checked{% endif %}
+                  {% if user.role != 'admin' %}disabled{% endif %}
+                >
+                <span>Включено</span>
+              </span>
+
+            {% else %}
+              <input
+                type="{{
+                  'number'
+                  if parameter.get('type') in ['integer', 'number']
+                  else 'text'
+                }}"
+                name="{{ parameter.name }}"
+                value="{{ current_value }}"
+                data-parameter-type="{{ parameter.get('type', 'string') }}"
+                data-default-value="{{ parameter.get('default', '') }}"
+                {% if parameter.get('min') is not none %}
+                  min="{{ parameter.get('min') }}"
+                {% endif %}
+                {% if parameter.get('max') is not none %}
+                  max="{{ parameter.get('max') }}"
+                {% endif %}
+                {% if parameter.get('step') is not none %}
+                  step="{{ parameter.get('step') }}"
+                {% elif parameter.get('type') == 'integer' %}
+                  step="1"
+                {% elif parameter.get('type') == 'number' %}
+                  step="any"
+                {% endif %}
+                {% if user.role != 'admin' %}readonly{% endif %}
+                required
+              >
+            {% endif %}
+          </label>
+        {% endfor %}
+      </form>
+    {% else %}
+      <p class="empty-state">
+        ML-сервис не предоставил схему гиперпараметров для этой модели.
+      </p>
+    {% endif %}
+  </section>
+  {% if user.role == 'admin' %}
+    <div class="instance-form-actions run-launch-action">
+      <button
+        class="button button-primary"
+        type="button"
+        data-open-dialog="run-dialog"
+        {% if model.status != 'validated' %}
+          disabled
+          title="Модель ещё не прошла валидацию"
+        {% elif not datasets %}
+          disabled
+          title="Сначала добавьте хотя бы один датасет"
+        {% endif %}
+      >
+        Запустить модель
+      </button>
+
+      <button
+        class="button button-secondary"
+        type="button"
+        data-open-dialog="new-version-dialog"
+      >
+        Зарегистрировать новую версию
+      </button>
+
+      <form
+        method="post"
+        action="{{ url_for('models.revalidate_model', model_id=model.id) }}"
+      >
+        {% if csrf_token is defined %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+
+        <button
+          class="button button-secondary"
+          type="submit"
+          {% if model.status in ['pending_validation', 'validating'] %}
+            disabled
+            title="Модель уже ожидает валидации или валидируется"
+          {% else %}
+            title="Повторно проверить модель по зарегистрированному URL"
+          {% endif %}
+        >
+          Повторить валидацию
+        </button>
+      </form>
+    </div>
+  {% endif %}
+  <section class="instance-section">
+    <div class="section-heading">
+      <div>
+        <h2>Запуски модели</h2>
+        <p>Сначала показаны самые новые запуски.</p>
+      </div>
+    </div>
+    {% include "instances/run_cards.html" %}
+  </section>
+</main>
+
+<dialog class="dialog" id="password-dialog" aria-labelledby="password-title">
+  <div class="dialog-head"><h2 id="password-title">Смена пароля</h2><button class="icon-button" type="button" data-close-dialog aria-label="Закрыть">×</button></div>
+  <form method="post" action="{{ url_for('auth.change_password') }}" class="form-stack" data-password-form>
+    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+    <label>Текущий пароль<input type="password" name="current_password" autocomplete="current-password" required></label>
+    <label>Новый пароль<input type="password" name="new_password" autocomplete="new-password" required></label>
+    <label>Повторите новый пароль<input type="password" name="new_password_repeat" autocomplete="new-password" required></label>
+    <div class="dialog-actions"><button class="button button-secondary" type="button" data-close-dialog>Отмена</button><button class="button button-primary" type="submit">Сохранить</button></div>
+  </form>
+</dialog>
+
+{% if user.role == 'admin' %}
+<dialog class="dialog dialog-wide" id="run-dialog" aria-labelledby="run-title">
+  <div class="dialog-head">
+    <h2 id="run-title">Запуск модели</h2>
+    <button class="button button-small button-secondary" type="button" data-close-dialog>← Назад</button>
+  </div>
+
+  <form method="post" action="{{ url_for('models.create_run', model_id=model.id) }}" class="form-stack" data-run-form>
+    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+    <input type="hidden" name="hyperparameters" value="" data-run-hyperparameters>
+
+    <label>
+      Датасет
+      <select name="dataset_id" required data-run-dataset-select>
+        <option value="" selected disabled>Выберите датасет</option>
+        {% for dataset in datasets %}
+          <option value="{{ dataset.id }}" data-summary-url="{{ url_for('datasets.summary', dataset_id=dataset.id) }}">
+            #{{ dataset.id }}: {{ dataset.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <p class="form-hint">После выбора отображается фактическое разбиение датасета по классам.</p>
+    <p class="form-error" data-dataset-summary-error hidden></p>
+
+    <div class="table-wrap dataset-run-summary" data-dataset-summary hidden>
+      <table class="results-table dataset-stats-table">
+        <thead>
+          <tr>
+            <th>Класс</th>
+            <th>В тренировочной выборке</th>
+            <th>В тестовой выборке</th>
+            <th>Доля тренировочной выборки</th>
+          </tr>
+        </thead>
+        <tbody data-dataset-summary-body></tbody>
+      </table>
+    </div>
+
+    <div class="dialog-actions">
+      <button class="button button-secondary" type="button" data-close-dialog>Отмена</button>
+      <button class="button button-primary" type="submit" disabled data-run-submit>Запустить модель</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+{% if user.role == 'admin' %}
+<dialog class="dialog" id="new-version-dialog" aria-labelledby="new-version-title">
+  <div class="dialog-head">
+    <h2 id="new-version-title">Новая версия модели</h2>
+    <button
+      class="icon-button"
+      type="button"
+      data-close-dialog
+      aria-label="Закрыть"
+    >×</button>
+  </div>
+
+  <p class="muted">
+    ML-сервис проверит модель по уже зарегистрированному URL:
+    <code>{{ model.import_url }}</code>
+  </p>
+
+  <form
+    method="post"
+    action="{{ url_for('models.create_version', model_id=model.id) }}"
+    class="form-stack"
+  >
+    {% if csrf_token is defined %}
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% endif %}
+
+    <label>
+      Новая версия
+      <input
+        type="text"
+        name="version"
+        placeholder="Например, 1.1.0"
+        maxlength="64"
+        required
+      >
+    </label>
+
+    <p class="form-hint">
+      Используйте формат <code>major.minor.patch</code>, например
+      <code>1.0.1</code> или <code>2.0.0</code>.
+    </p>
+
+    <div class="dialog-actions">
+      <button class="button button-secondary" type="button" data-close-dialog>
+        Отмена
+      </button>
+      <button class="button button-primary" type="submit">
+        Провалидировать и зарегистрировать
+      </button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+
+<script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/runs.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/model.js') }}" defer></script>
+</body>
+</html>
